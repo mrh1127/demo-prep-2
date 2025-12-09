@@ -1,33 +1,35 @@
 name: Azure Static Web App CI/CD
+
 on:
   push:
     branches:
       - main
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      # Step 1: Checkout code
+      # Step 1: Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v3
-      
+
       # Step 2: Login to Azure using JSON secret
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      # Step 3: Ensure Resource Group Exists (don't fail if exists)
+
+      # Step 3: Ensure Resource Group Exists
       - name: Ensure Resource Group Exists
         run: |
           az group create --name my-static-webapp-rg-1 --location "East US" || true
-      
+
       # Step 4: Install/update Azure Static Web Apps CLI extension
       - name: Install/update Static Web Apps CLI extension
         run: |
-          az extension add --name staticwebapp --upgrade
-      
-      # Step 5: Create Static Web App if it doesn't exist
+          az extension add --name staticwebapp --upgrade || true
+
+      # Step 5: Ensure Static Web App Exists
       - name: Ensure Static Web App Exists
         id: swa
         run: |
@@ -46,8 +48,33 @@ jobs:
           fi
           echo "APP_NAME=$APP_NAME" >> $GITHUB_ENV
           echo "RG_NAME=$RG_NAME" >> $GITHUB_ENV
-      
-      # Step 6: Get deployment token dynamically
+
+      # Step 6: Set Application Settings for Supabase
+      - name: Set Supabase Environment Variables in Azure
+        run: |
+          az staticwebapp appsettings set \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RG_NAME }} \
+            --settings VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }} \
+                       VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+      # Step 7: Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      # Step 8: Install dependencies and build app
+      - name: Build App
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          npm ci
+          npm run build
+
+      # Step 9: Get deployment token dynamically
       - name: Get Deployment Token
         id: get_token
         run: |
@@ -57,29 +84,13 @@ jobs:
             --query "properties.apiKey" -o tsv)
           echo "DEPLOY_TOKEN=$DEPLOY_TOKEN" >> $GITHUB_OUTPUT
           echo "::add-mask::$DEPLOY_TOKEN"
-      
-      # Step 7: Setup Node.js
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          cache: 'npm'
-      
-      # Step 8: Build App (React example)
-      - name: Build App
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: |
-          npm ci
-          npm run build
-      
-      # Step 9: Deploy to Azure Static Web App
+
+      # Step 10: Deploy to Azure Static Web App
       - name: Deploy to Azure Static Web App
         uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ steps.get_token.outputs.DEPLOY_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
-          app_location: "/"
-          output_location: "dist"
+          app_location: "/"         # Root of your repo
+          output_location: "dist"   # <-- Vite default build folder; for CRA, use "build"
