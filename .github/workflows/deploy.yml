@@ -49,14 +49,13 @@ jobs:
           echo "APP_NAME=$APP_NAME" >> $GITHUB_ENV
           echo "RG_NAME=$RG_NAME" >> $GITHUB_ENV
 
-      # Step 6: Set Application Settings for Supabase
+      # Step 6: Set Supabase Environment Variables in Azure
       - name: Set Supabase Environment Variables in Azure
         run: |
           az staticwebapp appsettings set \
             --name ${{ env.APP_NAME }} \
             --resource-group ${{ env.RG_NAME }} \
-            --settings VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }} \
-                       VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}
+            --setting-names "VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}" "VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}"
 
       # Step 7: Setup Node.js
       - name: Setup Node.js
